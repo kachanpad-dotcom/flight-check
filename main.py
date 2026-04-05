@@ -1,27 +1,33 @@
-import requests
 import os
+import requests
 
-def send_line(msg):
-    url = "https://api.line.me/v2/bot/message/push"
+# 環境変数から取得
+LINE_CHANNEL_TOKEN = os.environ["LINE_CHANNEL_TOKEN"]
+LINE_USER_ID = os.environ["LINE_USER_ID"]
 
-    headers = {
-        "Authorization": f"Bearer {os.getenv('LINE_CHANNEL_TOKEN')}",
-        "Content-Type": "application/json"
-    }
+# LINE APIエンドポイント
+url = "https://api.line.me/v2/bot/message/push"
 
-    data = {
-        "to": os.getenv("LINE_USER_ID"),
-        "messages": [
-            {
-                "type": "text",
-                "text": msg
-            }
-        ]
-    }
+# ヘッダー
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}"
+}
 
-    response = requests.post(url, headers=headers, json=data)
-    print(response.text)
+# 送信データ
+data = {
+    "to": LINE_USER_ID,
+    "messages": [
+        {
+            "type": "text",
+            "text": "テスト送信成功！"
+        }
+    ]
+}
 
+# リクエスト送信
+response = requests.post(url, headers=headers, json=data)
 
-# テスト送信
-send_line("🎉 GitHubからLINE通知成功！")
+# 結果表示（超重要）
+print(response.status_code)
+print(response.text)

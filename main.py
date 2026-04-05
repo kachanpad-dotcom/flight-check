@@ -31,3 +31,4 @@ response = requests.post(url, headers=headers, json=data)
 # 結果表示（超重要）
 print(response.status_code)
 print(response.text)
+

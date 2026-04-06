@@ -1,4 +1,4 @@
-name: jal3082-test
+name: jal3082-reservation-test
 
 on:
   workflow_dispatch:

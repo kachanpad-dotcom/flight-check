@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install playwright
-          python -m playwright install chromium
+          python -m playwright install --with-deps firefox
 
       - name: Run test script
         run: python check.py

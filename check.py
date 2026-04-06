@@ -4,7 +4,6 @@ import time
 
 
 URL = "https://www.jal.co.jp/flight-status/dom/"
-FLIGHT_NO = "082"  # 今回はこれだけ試す
 
 
 def goto_with_retry(page, url: str, retries: int = 3) -> None:
@@ -24,52 +23,6 @@ def goto_with_retry(page, url: str, retries: int = 3) -> None:
     raise last_error
 
 
-def force_activate_flightnum_tab(page) -> None:
-    selector = 'input[name="form-radio-item"][value="flightNum"]'
-    label_selector = 'label[for="form-radio-item-02"]'
-
-    radio_count = page.locator(selector).count()
-    label_count = page.locator(label_selector).count()
-
-    print("flightNum radio count=", radio_count)
-    print("flightNum label count=", label_count)
-
-    if label_count > 0:
-        try:
-            page.locator(label_selector).first.click(force=True, timeout=5000)
-            page.wait_for_timeout(1500)
-            print("label click(force=True) 成功")
-            return
-        except Exception as e:
-            print("label click失敗:", e)
-
-    if radio_count > 0:
-        try:
-            page.locator(selector).first.click(force=True, timeout=5000)
-            page.wait_for_timeout(1500)
-            print("radio click(force=True) 成功")
-            return
-        except Exception as e:
-            print("radio force click失敗:", e)
-
-    try:
-        page.evaluate("""
-        () => {
-            const radio = document.querySelector('input[name="form-radio-item"][value="flightNum"]');
-            if (!radio) throw new Error("flightNum radio not found");
-            radio.checked = true;
-            radio.dispatchEvent(new Event('input', { bubbles: true }));
-            radio.dispatchEvent(new Event('change', { bubbles: true }));
-            radio.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        }
-        """)
-        page.wait_for_timeout(1500)
-        print("radio JS切替 成功")
-    except Exception as e:
-        print("radio JS切替失敗:", e)
-        raise RuntimeError("便名検索タブ切替に失敗しました")
-
-
 def main():
     with sync_playwright() as p:
         browser = p.firefox.launch(headless=True)
@@ -86,76 +39,66 @@ def main():
 
         try:
             print("=== テスト開始 ===")
-            print("便名:", FLIGHT_NO)
-
             goto_with_retry(page, URL)
 
-            force_activate_flightnum_tab(page)
-
             forms = page.locator("form")
-            form_count = forms.count()
-            print("form count=", form_count)
-            if form_count < 2:
-                raise RuntimeError("便名検索フォームが見つかりません")
+            print("form count =", forms.count())
+            if forms.count() < 2:
+                raise RuntimeError("form[1] が見つかりません")
 
             target_form = forms.nth(1)
 
-            tomorrow_radio = target_form.locator('input[name="dateAttribute"][value="2"]')
-            print("dateAttribute=2 count=", tomorrow_radio.count())
-            if tomorrow_radio.count() > 0:
+            print("\n=== form[1] outerHTML ===")
+            print(target_form.evaluate("el => el.outerHTML"))
+
+            print("\n=== form[1] 内の button 情報 ===")
+            buttons = target_form.locator("button")
+            print("button count =", buttons.count())
+            for i in range(buttons.count()):
+                btn = buttons.nth(i)
                 try:
-                    tomorrow_radio.first.click(force=True, timeout=5000)
-                    page.wait_for_timeout(1000)
-                    print("dateAttribute=2 click成功")
+                    print(f"\n--- button[{i}] ---")
+                    print("text =", btn.inner_text())
+                    print("type =", btn.get_attribute("type"))
+                    print("name =", btn.get_attribute("name"))
+                    print("value =", btn.get_attribute("value"))
+                    print("id =", btn.get_attribute("id"))
+                    print("class =", btn.get_attribute("class"))
+                    print("onclick =", btn.get_attribute("onclick"))
+                    print("outerHTML =", btn.evaluate("el => el.outerHTML"))
                 except Exception as e:
-                    print("dateAttribute click失敗:", e)
-                    page.evaluate("""
-                    () => {
-                        const el = document.querySelector('input[name="dateAttribute"][value="2"]');
-                        if (!el) throw new Error("dateAttribute=2 not found");
-                        el.checked = true;
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    """)
-                    page.wait_for_timeout(1000)
-                    print("dateAttribute JS切替成功")
+                    print(f"button[{i}] 読み取り失敗:", e)
 
-            airline = target_form.locator('select[name="airlineCode"]')
-            print("airlineCode count=", airline.count())
-            if airline.count() > 0:
-                airline.first.select_option(value="JAL")
-                print("airlineCode=JAL")
+            print("\n=== form[1] の input/select 情報 ===")
+            items = target_form.locator("input, select")
+            print("item count =", items.count())
+            for i in range(items.count()):
+                item = items.nth(i)
+                try:
+                    tag = item.evaluate("el => el.tagName")
+                    print(
+                        f"item[{i}] "
+                        f"tag={tag} "
+                        f"type={item.get_attribute('type')} "
+                        f"name={item.get_attribute('name')} "
+                        f"value={item.get_attribute('value')} "
+                        f"placeholder={item.get_attribute('placeholder')} "
+                        f"class={item.get_attribute('class')}"
+                    )
+                except Exception as e:
+                    print(f"item[{i}] 読み取り失敗:", e)
 
-            flight_input = target_form.locator('input[name="flightSerNo"]')
-            print("flightSerNo count=", flight_input.count())
-            if flight_input.count() == 0:
-                raise RuntimeError("flightSerNoなし")
-
-            flight_input.first.fill("")
-            flight_input.first.fill(FLIGHT_NO)
-            print("便名入力完了")
-
-            search_button = target_form.get_by_text("検索する", exact=False)
-            print("検索するボタン count=", search_button.count())
-            if search_button.count() == 0:
-                raise RuntimeError("検索するボタンが見つかりません")
-
-            search_button.first.click(force=True, timeout=5000)
-            page.wait_for_timeout(6000)
-
-            text = page.locator("body").inner_text(timeout=15000)
-
-            print("=== 検索後チェック ===")
-            print("URL:", page.url)
-            print("3082:", "3082" in text)
-            print("082:", "082" in text)
-            print("73H:", "73H" in text)
-            print("737-800:", "737-800" in text)
-            print("国際線機材:", "国際線機材" in text)
-            print("国際線仕様:", "国際線仕様" in text)
-
-            print("=== 冒頭 ===")
-            print(text[:3000])
+            print("\n=== form[1] に紐づく script / on* 属性候補 ===")
+            scripts = page.locator("script")
+            print("script count =", scripts.count())
+            for i in range(min(scripts.count(), 30)):
+                try:
+                    txt = scripts.nth(i).inner_text()
+                    if any(k in txt for k in ["flightSerNo", "dateAttribute", "airlineCode", "FsBtn", "検索", "flightNum"]):
+                        print(f"\n--- script[{i}] ---")
+                        print(txt[:3000])
+                except Exception:
+                    pass
 
         except Exception as e:
             print("=== 例外 ===")

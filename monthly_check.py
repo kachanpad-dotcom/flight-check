@@ -1,281 +1,449 @@
 import json
 import os
-import re
 import time
-from datetime import datetime, timedelta, timezone
+import random
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Optional
 
 import requests
-from playwright.sync_api import sync_playwright
-
 
 DATA_FILE = Path("data.json")
 
 LINE_CHANNEL_TOKEN = os.getenv("LINE_CHANNEL_TOKEN")
 LINE_USER_ID = os.getenv("LINE_USER_ID")
 
-TARGET_KEYWORD = "国際線仕様機材"
-
-# 月次: JAL予約画面用
-# url は「翌月分の予約結果ページURL」を入れる
-# 便名ごとに表示されたカードから判定する
-MONTHLY_TARGETS = [
-    {
-        "flight_no": "JAL3082",
-        "url": "https://booking.jal.co.jp/jl/dom-bkg/upsell/outbound",
-        "flight_label_pattern": r"JAL\s*3082",
-    },
-    # 追加例
-    # {
-    #     "flight_no": "JAL3084",
-    #     "url": "https://booking.jal.co.jp/jl/dom-bkg/upsell/outbound",
-    #     "flight_label_pattern": r"JAL\s*3084",
-    # },
+# =========================
+# 監視便（全便ここに入れる）
+# =========================
+ALL_FLIGHTS = [
+    "JAL101",
+    "JAL103",
+    "JAL111",
+    "JAL113",
+    "JAL115",
+    "JAL117",
+    "JAL119",
+    "JAL121",
+    "JAL125",
+    "JAL127",
+    "JAL131",
+    "JAL133",
+    "JAL135",
+    "JAL137",
+    "JAL139",
+    "JAL141",
+    "JAL143",
+    "JAL145",
+    "JAL147",
+    "JAL149",
+    "JAL151",
+    "JAL153",
+    "JAL158",
+    "JAL185",
+    "JAL187",
+    "JAL189",
+    "JAL193",
+    "JAL201",
+    "JAL201",
+    "JAL209",
+    "JAL209",
+    "JAL213",
+    "JAL215",
+    "JAL217",
+    "JAL220",
+    "JAL221",
+    "JAL225",
+    "JAL231",
+    "JAL233",
+    "JAL237",
+    "JAL239",
+    "JAL241",
+    "JAL253",
+    "JAL255",
+    "JAL257",
+    "JAL259",
+    "JAL263",
+    "JAL265",
+    "JAL267",
+    "JAL277",
+    "JAL279",
+    "JAL283",
+    "JAL285",
+    "JAL303",
+    "JAL305",
+    "JAL307",
+    "JAL309",
+    "JAL311",
+    "JAL313",
+    "JAL315",
+    "JAL317",
+    "JAL319",
+    "JAL321",
+    "JAL323",
+    "JAL325",
+    "JAL327",
+    "JAL329",
+    "JAL331",
+    "JAL333",
+    "JAL335",
+    "JAL373",
+    "JAL375",
+    "JAL377",
+    "JAL431",
+    "JAL433",
+    "JAL435",
+    "JAL437",
+    "JAL439",
+    "JAL441",
+    "JAL443",
+    "JAL453",
+    "JAL455",
+    "JAL459",
+    "JAL461",
+    "JAL463",
+    "JAL465",
+    "JAL475",
+    "JAL477",
+    "JAL479",
+    "JAL481",
+    "JAL483",
+    "JAL485",
+    "JAL487",
+    "JAL491",
+    "JAL493",
+    "JAL495",
+    "JAL497",
+    "JAL499",
+    "JAL501",
+    "JAL503",
+    "JAL505",
+    "JAL507",
+    "JAL509",
+    "JAL511",
+    "JAL513",
+    "JAL515",
+    "JAL517",
+    "JAL519",
+    "JAL521",
+    "JAL523",
+    "JAL525",
+    "JAL527",
+    "JAL529",
+    "JAL531",
+    "JAL541",
+    "JAL543",
+    "JAL545",
+    "JAL551",
+    "JAL553",
+    "JAL555",
+    "JAL557",
+    "JAL565",
+    "JAL567",
+    "JAL569",
+    "JAL573",
+    "JAL575",
+    "JAL577",
+    "JAL579",
+    "JAL585",
+    "JAL587",
+    "JAL589",
+    "JAL599",
+    "JAL605",
+    "JAL607",
+    "JAL609",
+    "JAL611",
+    "JAL613",
+    "JAL615",
+    "JAL623",
+    "JAL625",
+    "JAL627",
+    "JAL629",
+    "JAL631",
+    "JAL633",
+    "JAL635",
+    "JAL637",
+    "JAL639",
+    "JAL641",
+    "JAL643",
+    "JAL645",
+    "JAL647",
+    "JAL649",
+    "JAL651",
+    "JAL653",
+    "JAL655",
+    "JAL659",
+    "JAL661",
+    "JAL663",
+    "JAL665",
+    "JAL667",
+    "JAL669",
+    "JAL671",
+    "JAL687",
+    "JAL695",
+    "JAL901",
+    "JAL903",
+    "JAL905",
+    "JAL907",
+    "JAL909",
+    "JAL913",
+    "JAL915",
+    "JAL917",
+    "JAL919",
+    "JAL921",
+    "JAL923",
+    "JAL925",
+    "JAL987",
+    "JAL3009",
+    "JAL3083",
+    "JAL3087",
+    # ここに190便入れる
 ]
 
+# =========================
+# 国際線仕様機材の機体番号
+# =========================
+INTERNATIONAL_REGS = {
+    "JA304J",
+    "JA305J",
+    "JA312J",
+    "JA315J",
+    "JA317J",
+    "JA321J",
+    "JA601J",
+    "JA602J",
+    "JA603J",
+    "JA606J",
+    "JA607J",
+    "JA608J",
+    "JA610J",
+    "JA611J",
+    "JA612J",
+    "JA613J",
+    "JA614J",
+    "JA615J",
+    "JA616J",
+    "JA617J",
+    "JA618J",
+    "JA619J",
+    "JA620J",
+    "JA621J",
+    "JA622J",
+    "JA623J",
+    "JA733J",
+    "JA735J",
+    "JA736J",
+    "JA737J",
+    "JA738J",
+    "JA739J",
+    "JA740J",
+    "JA741J",
+    "JA823J",
+    "JA826J",
+    "JA829J",
+    "JA830J",
+    "JA831J",
+    "JA832J",
+    "JA833J",
+    "JA834J",
+    "JA835J",
+    "JA837J",
+    "JA838J",
+    "JA839J",
+    "JA840J",
+    "JA841J",
+    "JA842J",
+    "JA843J",
+    "JA844J",
+    "JA845J",
+    "JA846J",
+    "JA847J",
+    "JA848J",
+    "JA849J",
+    "JA861J",
+    "JA862J",
+    "JA863J",
+    "JA864J",
+    "JA865J",
+    "JA866J",
+    "JA867J",
+    "JA868J",
+    "JA869J",
+    "JA870J",
+    "JA871J",
+    "JA872J",
+    "JA873J",
+    "JA874J",
+    "JA875J",
+    "JA876J",
+    "JA877J",
+    "JA878J",
+    "JA879J",
+    "JA880J",
+    "JA881J",
+    "JA882J",
+    # ここに78機入れる
+}
 
-def load_data() -> Dict[str, Any]:
-    if not DATA_FILE.exists():
-        return {
-            "monthly": {},
-            "daily": {},
-            "errors": {
-                "monthly": {},
-                "daily": {},
-            },
-        }
 
+def get_flight_info(flight_no: str) -> Optional[dict]:
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
+        url = f"https://data-live.flightradar24.com/clickhandler/?flight={flight_no}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        res = requests.get(url, headers=headers, timeout=20)
+        if res.status_code != 200:
+            print(f"{flight_no} status={res.status_code}")
+            return None
+
+        data = res.json()
+
         return {
-            "monthly": {},
-            "daily": {},
-            "errors": {
-                "monthly": {},
-                "daily": {},
-            },
+            "reg": data.get("registration"),
+            "dep": data.get("airport", {}).get("origin", {}).get("code", {}).get("iata"),
+            "arr": data.get("airport", {}).get("destination", {}).get("code", {}).get("iata"),
+            "model": data.get("aircraft", {}).get("model", {}).get("text", ""),
         }
 
+    except Exception as e:
+        print(f"{flight_no} FR24 error: {e}")
+        return None
 
-def save_data(data: Dict[str, Any]) -> None:
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def is_big(model: str) -> bool:
+    return any(x in (model or "") for x in ["787", "777"])
 
 
-def send_line_message(message: str) -> None:
+def split_flights():
+    mid = len(ALL_FLIGHTS) // 2
+    return ALL_FLIGHTS[:mid], ALL_FLIGHTS[mid:]
+
+
+def get_current_group():
+    now = datetime.utcnow() + timedelta(hours=9)
+    hour = now.hour
+
+    first_group_hours = {6, 12, 18}
+    group_a, group_b = split_flights()
+
+    if hour in first_group_hours:
+        print("▶ 前半グループ実行")
+        return group_a
+    else:
+        print("▶ 後半グループ実行")
+        return group_b
+
+
+def load_data():
+    if not DATA_FILE.exists():
+        return {"daily": {}, "errors": {"daily": {}}}
+    return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+
+
+def save_data(data):
+    DATA_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def send_line(msg):
     if not LINE_CHANNEL_TOKEN or not LINE_USER_ID:
-        print("LINE secrets are not set.")
-        print(message)
+        print(msg)
         return
 
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}",
-    }
-    payload = {
-        "to": LINE_USER_ID,
-        "messages": [{"type": "text", "text": message[:5000]}],
-    }
-
-    response = requests.post(url, headers=headers, json=payload, timeout=30)
-    print("LINE status:", response.status_code)
-    print(response.text)
-    response.raise_for_status()
+    requests.post(
+        "https://api.line.me/v2/bot/message/push",
+        headers={
+            "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "to": LINE_USER_ID,
+            "messages": [{"type": "text", "text": msg[:5000]}],
+        },
+        timeout=20,
+    )
 
 
-def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+def main():
+    data = load_data()
+    state = data.get("daily", {})
+    errors = data.get("errors", {}).get("daily", {})
 
+    messages = []
 
-def next_month_key_jst() -> str:
-    jst = timezone(timedelta(hours=9))
-    now = datetime.now(jst)
-    year = now.year
-    month = now.month + 1
-    if month == 13:
-        year += 1
-        month = 1
-    return f"{year:04d}-{month:02d}"
+    target_flights = get_current_group()
 
+    for flight in target_flights:
+        info = get_flight_info(flight)
 
-def goto_with_retry(page, url: str, retries: int = 3) -> None:
-    last_error = None
-    for attempt in range(1, retries + 1):
-        try:
-            print(f"Access attempt {attempt}/{retries}: {url}")
-            page.goto(url, wait_until="commit", timeout=60000)
-            page.wait_for_timeout(5000)
-            return
-        except Exception as e:
-            last_error = e
-            print(f"Access failed {attempt}/{retries}: {e}")
-            if attempt < retries:
-                time.sleep(3)
-
-    if last_error:
-        raise last_error
-    raise RuntimeError("Unknown access error")
-
-
-def find_flight_card_text(page, flight_label_pattern: str) -> str:
-    candidates = page.locator("section, article, li, div")
-    count = candidates.count()
-
-    for i in range(min(count, 700)):
-        try:
-            el = candidates.nth(i)
-            text = el.inner_text(timeout=500)
-            if not text:
-                continue
-
-            normalized = normalize_text(text)
-            if re.search(flight_label_pattern, normalized, flags=re.IGNORECASE):
-                if len(normalized) >= 30:
-                    return normalized
-        except Exception:
+        if not info or not info["reg"]:
+            if not errors.get(flight):
+                messages.append(f"⚠️取得失敗\n{flight}")
+            errors[flight] = True
             continue
 
-    body_text = normalize_text(page.locator("body").inner_text(timeout=15000))
-    if re.search(flight_label_pattern, body_text, flags=re.IGNORECASE):
-        return body_text
+        errors[flight] = False
 
-    raise RuntimeError("便カードを見つけられませんでした")
+        reg = info["reg"]
+        dep = info["dep"] or "???"
+        arr = info["arr"] or "???"
+        model = info["model"] or ""
 
+        is_target = reg in INTERNATIONAL_REGS
+        big = is_big(model)
 
-def extract_equipment(card_text: str) -> str:
-    patterns = [
-        r"\b73H\b",
-        r"\b738\b",
-        r"\b737-800\b",
-        r"\b787-8\b",
-        r"\b787-9\b",
-        r"\b767-300ER\b",
-        r"\b763\b",
-        r"\b788\b",
-        r"\b789\b",
-        r"\b359\b",
-        r"\bA350-900\b",
-    ]
+        prev = state.get(flight)
 
-    hits: List[str] = []
-    for pat in patterns:
-        hits.extend(re.findall(pat, card_text, flags=re.IGNORECASE))
-
-    uniq = sorted(set(hits))
-    return ", ".join(uniq) if uniq else "不明"
-
-
-def check_monthly_target(target: Dict[str, str]) -> Dict[str, Any]:
-    with sync_playwright() as p:
-        browser = p.firefox.launch(headless=True)
-        context = browser.new_context(
-            locale="ja-JP",
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) "
-                "Gecko/20100101 Firefox/137.0"
-            ),
-            ignore_https_errors=True,
-        )
-        page = context.new_page()
-        page.set_default_timeout(30000)
-
-        try:
-            goto_with_retry(page, target["url"])
-            card_text = find_flight_card_text(page, target["flight_label_pattern"])
-            return {
-                "flight_no": target["flight_no"],
-                "equipment": extract_equipment(card_text),
-                "is_target": TARGET_KEYWORD in card_text,
-                "matched_text": card_text[:3000],
-                "url": page.url,
-            }
-        finally:
-            browser.close()
-
-
-def main() -> None:
-    data = load_data()
-    monthly_state = data.get("monthly", {})
-    errors = data.get("errors", {})
-    monthly_errors = errors.get("monthly", {})
-
-    next_month = next_month_key_jst()
-    notify_messages: List[str] = []
-    error_messages: List[str] = []
-
-    if next_month not in monthly_state:
-        monthly_state[next_month] = {}
-
-    for target in MONTHLY_TARGETS:
-        flight_no = target["flight_no"]
-
-        try:
-            current = check_monthly_target(target)
-            monthly_errors[flight_no] = False
-
-            previous = monthly_state[next_month].get(flight_no)
-            monthly_state[next_month][flight_no] = current
-
-            if current["is_target"]:
-                if previous is None:
-                    notify_messages.append(
-                        "\n".join(
-                            [
-                                "📅 月次チェック",
-                                f"対象月: {next_month}",
-                                f"便名: {flight_no}",
-                                f"機材: {current['equipment']}",
-                                "判定: 国際線仕様機材",
-                            ]
-                        )
-                    )
-                else:
-                    changed = (
-                        previous.get("equipment") != current.get("equipment")
-                        or previous.get("is_target") != current.get("is_target")
-                    )
-                    if changed:
-                        notify_messages.append(
-                            "\n".join(
-                                [
-                                    "📅 月次チェック更新",
-                                    f"対象月: {next_month}",
-                                    f"便名: {flight_no}",
-                                    f"前回機材: {previous.get('equipment', '不明')}",
-                                    f"今回機材: {current['equipment']}",
-                                    "判定: 国際線仕様機材",
-                                ]
-                            )
-                        )
-
-        except Exception as e:
-            prev_error = monthly_errors.get(flight_no, False)
-            if not prev_error:
-                error_messages.append(
-                    "\n".join(
-                        [
-                            "⚠️ 月次取得失敗",
-                            f"便名: {flight_no}",
-                            f"エラー: {str(e)}",
-                        ]
-                    )
+        if not prev:
+            if big:
+                messages.append(
+                    f"🔥大当たり\n"
+                    f"{flight}\n"
+                    f"{dep} → {arr}\n"
+                    f"{model}\n"
+                    f"{reg}"
                 )
-            monthly_errors[flight_no] = True
+            elif is_target:
+                messages.append(
+                    f"{flight}\n"
+                    f"{dep} → {arr}\n"
+                    f"{reg}"
+                )
 
-    data["monthly"] = monthly_state
-    errors["monthly"] = monthly_errors
-    data["errors"] = errors
+            state[flight] = {"reg": reg}
+            time.sleep(random.uniform(4, 6))
+            continue
+
+        if prev["reg"] != reg:
+            if big:
+                messages.append(
+                    f"🔥大当たり\n"
+                    f"{flight}\n"
+                    f"{dep} → {arr}\n"
+                    f"{model}\n"
+                    f"{prev['reg']} → {reg}"
+                )
+            elif is_target:
+                messages.append(
+                    f"{flight}\n"
+                    f"{dep} → {arr}\n"
+                    f"{prev['reg']} → {reg}"
+                )
+
+        state[flight] = {"reg": reg}
+
+        time.sleep(random.uniform(4, 6))
+
+    data["daily"] = state
+    data["errors"] = {"daily": errors}
     save_data(data)
 
-    all_messages = notify_messages + error_messages
-    if all_messages:
-        send_line_message("\n\n".join(all_messages))
+    if messages:
+        send_line("\n\n".join(messages))
     else:
-        print("No monthly changes.")
+        print("no change")
 
 
 if __name__ == "__main__":

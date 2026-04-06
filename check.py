@@ -59,86 +59,59 @@ def main():
 
             goto_with_retry(page, URL)
 
-            body_text = page.locator("body").inner_text(timeout=15000)
-            print_flags(body_text, "初期本文")
-
             btn = page.locator('button.js-toggle-show_btn[aria-controls="toggle-0"]').first
-            print("\n=== 詳細ボタン情報 ===")
-            print("count =", page.locator('button.js-toggle-show_btn[aria-controls="toggle-0"]').count())
+            target = page.locator("#toggle-0").first
 
-            if btn.count() == 0:
-                raise RuntimeError('aria-controls="toggle-0" の詳細ボタンが見つかりません')
+            print("button count =", page.locator('button.js-toggle-show_btn[aria-controls="toggle-0"]').count())
+            print("toggle-0 count =", page.locator("#toggle-0").count())
 
-            print("button outerHTML =")
-            print(btn.evaluate("(el) => el.outerHTML"))
+            if btn.count() == 0 or target.count() == 0:
+                raise RuntimeError("必要要素が見つかりません")
+
             print("aria-expanded(before) =", btn.get_attribute("aria-expanded"))
 
-            # まずクリック
-            try:
-                btn.scroll_into_view_if_needed(timeout=5000)
-            except Exception:
-                pass
-
-            clicked = False
-
+            # 一応クリック
             try:
                 btn.click(force=True, timeout=5000)
-                page.wait_for_timeout(3000)
-                print("button click(force=True) 成功")
-                clicked = True
+                page.wait_for_timeout(2000)
+                print("button click成功")
             except Exception as e:
                 print("button click失敗:", e)
 
-            if not clicked:
-                try:
-                    btn.evaluate("(el) => el.click()")
-                    page.wait_for_timeout(3000)
-                    print("button JS click成功")
-                    clicked = True
-                except Exception as e:
-                    print("button JS click失敗:", e)
-
             print("aria-expanded(after) =", btn.get_attribute("aria-expanded"))
 
-            # 展開先そのものを直接読む
-            target = page.locator("#toggle-0")
-            print("\n=== toggle-0 情報 ===")
-            print("count =", target.count())
+            # 1) hiddenのまま textContent を読む
+            text_content = target.evaluate("(el) => el.textContent || ''")
+            print_flags(text_content, "toggle-0 textContent")
 
-            if target.count() > 0:
-                try:
-                    outer_html = target.first.evaluate("(el) => el.outerHTML")
-                    print("--- toggle-0 outerHTML 冒頭 ---")
-                    print(outer_html[:8000])
-                    print("--- end ---")
-                except Exception as e:
-                    print("toggle-0 outerHTML取得失敗:", e)
+            print("\n=== toggle-0 textContent 冒頭 ===")
+            print(text_content[:5000])
+            print("=== end ===")
 
-                try:
-                    inner_text = target.first.inner_text(timeout=5000)
-                except Exception:
-                    inner_text = ""
+            # 2) innerHTML を読む
+            inner_html = target.evaluate("(el) => el.innerHTML || ''")
+            print("\n=== toggle-0 innerHTML 冒頭 ===")
+            print(inner_html[:8000])
+            print("=== end ===")
 
-                print_flags(inner_text, "toggle-0 inner_text")
+            # 3) 強制表示して inner_text を読む
+            page.evaluate("""
+            () => {
+                const el = document.querySelector('#toggle-0');
+                if (!el) throw new Error('toggle-0 not found');
+                el.style.display = 'block';
+                el.hidden = false;
+                el.setAttribute('style', 'display: block;');
+            }
+            """)
+            page.wait_for_timeout(1000)
 
-                if inner_text.strip():
-                    print("\n=== toggle-0 text 冒頭 ===")
-                    print(inner_text[:4000])
-                    print("=== end ===")
-            else:
-                print("toggle-0 が存在しません")
+            forced_text = target.inner_text(timeout=5000)
+            print_flags(forced_text, "toggle-0 強制表示後 inner_text")
 
-            # 保険でHTML全体から toggle-0 周辺を抜く
-            html = page.content()
-            idx = html.find('id="toggle-0"')
-            print("\n=== page.content() から toggle-0 周辺 ===")
-            if idx >= 0:
-                start = max(0, idx - 500)
-                end = min(len(html), idx + 8000)
-                snippet = html[start:end]
-                print(snippet)
-            else:
-                print('id="toggle-0" が HTML 内に見つかりません')
+            print("\n=== toggle-0 強制表示後 inner_text 冒頭 ===")
+            print(forced_text[:5000])
+            print("=== end ===")
 
         except Exception as e:
             print("=== 例外 ===")

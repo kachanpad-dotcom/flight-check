@@ -3,8 +3,6 @@ import traceback
 import time
 
 
-# JAL公式のスマホ向け発着案内結果ページを直接使う
-# dateAttribute: 1=前日, 空=当日, 2=翌日
 URLS = [
     "https://www.jal.co.jp/flight-status/dom/sp/?FsBtn=flightNum&airlineCode=JAL&dateAttribute=2&flightSerNo=3082",
     "https://www.jal.co.jp/flight-status/dom/sp/?FsBtn=flightNum&airlineCode=JAL&dateAttribute=2&flightSerNo=082",
@@ -56,6 +54,7 @@ def run_one(page, url: str) -> None:
 def main():
     with sync_playwright() as p:
         browser = p.firefox.launch(headless=True)
+
         context = browser.new_context(
             locale="ja-JP",
             user_agent=(
@@ -64,10 +63,9 @@ def main():
                 "Mobile/15E148 Safari/604.1"
             ),
             viewport={"width": 390, "height": 844},
-            is_mobile=True,
-            has_touch=True,
             ignore_https_errors=True,
         )
+
         page = context.new_page()
         page.set_default_timeout(30000)
 

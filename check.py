@@ -1,142 +1,181 @@
-import json
-import os
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+import re
+from datetime import date, timedelta
 
-import requests
-
-DATA_FILE = Path("data.json")
-
-# ここに監視したい便名を入れる
-FLIGHTS_TO_CHECK = [
-    "JAL3082",
-    "JAL3084",
-]
-
-LINE_CHANNEL_TOKEN = os.getenv("LINE_CHANNEL_TOKEN")
-LINE_USER_ID = os.getenv("LINE_USER_ID")
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
-def load_data() -> Dict[str, Any]:
-    if not DATA_FILE.exists():
-        return {"flights": {}, "errors": {}}
-
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"flights": {}, "errors": {}}
+FLIGHT_NO = "JAL3082"
+DEP_AIRPORT = "福岡"
+ARR_AIRPORT = "成田"
 
 
-def save_data(data: Dict[str, Any]) -> None:
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def tomorrow_jst_str() -> str:
+    return (date.today() + timedelta(days=1)).isoformat()
 
 
-def send_line_message(message: str) -> None:
-    if not LINE_CHANNEL_TOKEN or not LINE_USER_ID:
-        print("LINE secrets are not set.")
-        print(message)
-        return
-
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_TOKEN}",
-    }
-    payload = {
-        "to": LINE_USER_ID,
-        "messages": [
-            {
-                "type": "text",
-                "text": message[:5000]
-            }
-        ]
-    }
-
-    response = requests.post(url, headers=headers, json=payload, timeout=30)
-    print("LINE status:", response.status_code)
-    print(response.text)
-    response.raise_for_status()
+def extract_numeric_flight_no(flight_no: str) -> str:
+    m = re.search(r"(\d+)$", flight_no.upper().replace(" ", ""))
+    if not m:
+        raise ValueError(f"便名の数値部分を取得できません: {flight_no}")
+    return m.group(1)
 
 
-def get_flight_equipment(flight_no: str) -> Optional[str]:
-    """
-    ここを実際の取得処理に差し替える。
-    取れたら機材名の文字列、取れなければ None を返す。
-    """
-
-    # 仮実装
-    sample_map = {
-        "JAL3082": "B737-800",
-        "JAL123": "A350-900",
-    }
-    return sample_map.get(flight_no)
+def is_international_spec(text: str) -> bool:
+    keywords = [
+        "国際線機材",
+        "国際線仕様",
+    ]
+    return any(k in text for k in keywords)
 
 
 def main() -> None:
-    data = load_data()
-    flights_state = data.get("flights", {})
-    errors_state = data.get("errors", {})
+    flight_number = extract_numeric_flight_no(FLIGHT_NO)
+    target_date = tomorrow_jst_str()
 
-    changed_messages: List[str] = []
-    error_messages: List[str] = []
+    print("=== テスト開始 ===")
+    print(f"便名: {FLIGHT_NO}")
+    print(f"搭乗日: {target_date}")
+    print(f"区間: {DEP_AIRPORT} → {ARR_AIRPORT}")
 
-    for flight_no in FLIGHTS_TO_CHECK:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(locale="ja-JP")
+
         try:
-            current_equipment = get_flight_equipment(flight_no)
+            # JAL国内線トップ
+            page.goto("https://www.jal.co.jp/jp/ja/dom/", wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(3000)
 
-            if not current_equipment:
-                prev_error = errors_state.get(flight_no, False)
+            # ポップアップっぽいものを閉じる
+            for text in ["閉じる", "OK", "同意する"]:
+                locator = page.get_by_text(text, exact=False)
+                if locator.count() > 0:
+                    try:
+                        locator.first.click(timeout=1000)
+                        page.wait_for_timeout(500)
+                    except Exception:
+                        pass
 
-                # 取得失敗時は最初の1回だけ通知
-                if not prev_error:
-                    error_messages.append(
-                        f"⚠️ 情報取得失敗\n便名: {flight_no}\n機材情報を取得できませんでした。"
-                    )
+            # 予約・空席照会っぽい導線を押す
+            clicked = False
+            for text in ["空席照会", "予約", "航空券予約", "国内線予約", "今すぐ検索"]:
+                locator = page.get_by_text(text, exact=False)
+                if locator.count() > 0:
+                    try:
+                        locator.first.click(timeout=3000)
+                        page.wait_for_timeout(3000)
+                        clicked = True
+                        print(f"クリック成功: {text}")
+                        break
+                    except Exception:
+                        pass
 
-                errors_state[flight_no] = True
-                continue
+            if not clicked:
+                print("予約/空席照会導線のクリックは未確定。ページ上で続行を試みます。")
 
-            # 取得成功したらエラー状態解除
-            errors_state[flight_no] = False
+            # 入力欄に総当たりで入力
+            inputs = page.locator("input").all()
 
-            prev_equipment = flights_state.get(flight_no)
+            for inp in inputs:
+                try:
+                    placeholder = inp.get_attribute("placeholder") or ""
+                    aria = inp.get_attribute("aria-label") or ""
+                    name = inp.get_attribute("name") or ""
+                    label = f"{placeholder} {aria} {name}"
 
-            if prev_equipment is None:
-                # 初回は通知して保存
-                changed_messages.append(
-                    f"🆕 初回取得\n便名: {flight_no}\n機材: {current_equipment}"
-                )
-                flights_state[flight_no] = current_equipment
-                continue
+                    if "便" in label:
+                        inp.fill(flight_number, timeout=1500)
+                        print("便名入力")
+                    elif "出発" in label:
+                        inp.fill(DEP_AIRPORT, timeout=1500)
+                        print("出発空港入力")
+                    elif "到着" in label:
+                        inp.fill(ARR_AIRPORT, timeout=1500)
+                        print("到着空港入力")
+                    elif "日付" in label or "搭乗日" in label:
+                        inp.fill(target_date, timeout=1500)
+                        print("日付入力")
+                except Exception:
+                    pass
 
-            if prev_equipment != current_equipment:
-                changed_messages.append(
-                    f"✈️ 機材変更を検知\n便名: {flight_no}\n前回: {prev_equipment}\n今回: {current_equipment}"
-                )
-                flights_state[flight_no] = current_equipment
+            # 検索ボタン候補
+            for text in ["検索", "空席照会", "次へ", "この条件で検索", "便を検索"]:
+                locator = page.get_by_text(text, exact=False)
+                if locator.count() > 0:
+                    try:
+                        locator.first.click(timeout=3000)
+                        page.wait_for_load_state("domcontentloaded", timeout=30000)
+                        page.wait_for_timeout(4000)
+                        print(f"検索クリック成功: {text}")
+                        break
+                    except Exception:
+                        pass
 
-        except Exception as e:
-            prev_error = errors_state.get(flight_no, False)
+            body_text = page.locator("body").inner_text(timeout=10000)
 
-            if not prev_error:
-                error_messages.append(
-                    f"⚠️ 情報取得失敗\n便名: {flight_no}\nエラー: {str(e)}"
-                )
+            print("=== 検索後テキスト冒頭 ===")
+            print(body_text[:3000])
+            print("=== ここまで ===")
 
-            errors_state[flight_no] = True
+            # 便名が見えるか確認
+            if flight_number not in body_text:
+                print(f"警告: 画面上で便名 {flight_number} を見つけられていません。")
 
-    data["flights"] = flights_state
-    data["errors"] = errors_state
-    save_data(data)
+            # シートマップ導線を押す
+            seatmap_clicked = False
+            for text in ["シートマップを表示", "シートマップ", "座席表", "座席を確認する"]:
+                locator = page.get_by_text(text, exact=False)
+                if locator.count() > 0:
+                    try:
+                        locator.first.click(timeout=5000)
+                        page.wait_for_load_state("domcontentloaded", timeout=30000)
+                        page.wait_for_timeout(4000)
+                        seatmap_clicked = True
+                        print(f"シートマップクリック成功: {text}")
+                        break
+                    except Exception:
+                        pass
 
-    all_messages = changed_messages + error_messages
+            if not seatmap_clicked:
+                print("シートマップ導線は見つからず。現在画面の内容で判定します。")
 
-    if all_messages:
-        send_line_message("\n\n".join(all_messages))
-    else:
-        print("No changes.")
+            final_text = page.locator("body").inner_text(timeout=10000)
+
+            print("=== 最終テキスト冒頭 ===")
+            print(final_text[:5000])
+            print("=== ここまで ===")
+
+            # 機材っぽい表記を拾う
+            patterns = [
+                r"\b73H\b",
+                r"\b738\b",
+                r"\b737-800\b",
+                r"\b787-8\b",
+                r"\b787-9\b",
+                r"\b767-300ER\b",
+                r"\b763\b",
+                r"\b788\b",
+                r"\b789\b",
+            ]
+            found = []
+            for pat in patterns:
+                found.extend(re.findall(pat, final_text, flags=re.IGNORECASE))
+
+            found = sorted(set(found))
+
+            print("=== 判定結果 ===")
+            print(f"検出機材表記: {found if found else 'なし'}")
+
+            if is_international_spec(final_text):
+                print("判定: 国際線仕様機材")
+            else:
+                print("判定: 国際線仕様機材ではない、または判定不能")
+
+        except PlaywrightTimeoutError as e:
+            print(f"タイムアウト: {e}")
+            raise
+        finally:
+            browser.close()
 
 
 if __name__ == "__main__":

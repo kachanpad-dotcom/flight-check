@@ -1,21 +1,6 @@
-name: jal3082-test
-
-on:
-  workflow_dispatch:
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - run: |
-          pip install playwright
-          python -m playwright install --with-deps firefox
-
-      - run: python check.py
+<div class="toggle js-toggle-show circle-icon">
+<h3 class="toggle_hdg _note">
+<button type="button" class="toggle_hdg_inner js-toggle-show_btn" aria-controls="toggle-0" aria-expanded="false">
+<div class="hdg_inner_box">
+<div class="box_flight_number">JAL3082</div>
+<div class="flight-date_box">

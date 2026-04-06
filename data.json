@@ -1,8 +1,12 @@
 {
-  "monthly": {},
+  "monthly": {
+    "2026-05": {}
+  },
   "daily": {},
   "errors": {
-    "monthly": {},
+    "monthly": {
+      "JAL3082": true
+    },
     "daily": {}
   }
 }

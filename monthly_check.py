@@ -308,64 +308,63 @@ def get_flight_info(flight_no: str) -> Optional[dict]:
             print(f"{flight_no} empty response")
             return None
 
-        # JSONとして読む
-        data = res.json()
+        print(f"{flight_no} response head: {text[:200]!r}")
 
-        # dictのとき
+        # JSONの先頭っぽくないものは捨てる
+        if not (text.startswith("{") or text.startswith("[")):
+            print(f"{flight_no} non-json response")
+            return None
+
+        try:
+            data = res.json()
+        except Exception as e:
+            print(f"{flight_no} json parse failed: {e}")
+            return None
+
+        # dict形式
         if isinstance(data, dict):
-            reg = data.get("registration")
-            dep = (
-                data.get("airport", {})
-                .get("origin", {})
-                .get("code", {})
-                .get("iata")
-            )
-            arr = (
-                data.get("airport", {})
-                .get("destination", {})
-                .get("code", {})
-                .get("iata")
-            )
-            model = data.get("aircraft", {}).get("model", {}).get("text", "")
-
             return {
-                "reg": reg,
-                "dep": dep,
-                "arr": arr,
-                "model": model,
+                "reg": data.get("registration"),
+                "dep": (
+                    data.get("airport", {})
+                    .get("origin", {})
+                    .get("code", {})
+                    .get("iata")
+                ),
+                "arr": (
+                    data.get("airport", {})
+                    .get("destination", {})
+                    .get("code", {})
+                    .get("iata")
+                ),
+                "model": data.get("aircraft", {}).get("model", {}).get("text", ""),
             }
 
-        # listのとき
+        # list形式
         if isinstance(data, list):
             print(f"{flight_no} returned list length={len(data)}")
             if not data:
                 return None
 
             first = data[0]
-            print(f"{flight_no} first item={first}")
+            print(f"{flight_no} first item={first!r}")
 
-            # listの中がdictなら拾う
             if isinstance(first, dict):
-                reg = first.get("registration")
-                dep = (
-                    first.get("airport", {})
-                    .get("origin", {})
-                    .get("code", {})
-                    .get("iata")
-                )
-                arr = (
-                    first.get("airport", {})
-                    .get("destination", {})
-                    .get("code", {})
-                    .get("iata")
-                )
-                model = first.get("aircraft", {}).get("model", {}).get("text", "")
-
                 return {
-                    "reg": reg,
-                    "dep": dep,
-                    "arr": arr,
-                    "model": model,
+                    "reg": first.get("registration"),
+                    "dep": (
+                        first.get("airport", {})
+                        .get("origin", {})
+                        .get("code", {})
+                        .get("iata")
+                    ),
+                    "arr": (
+                        first.get("airport", {})
+                        .get("destination", {})
+                        .get("code", {})
+                        .get("iata")
+                    ),
+                    "model": first.get("aircraft", {}).get("model", {}).get("text", ""),
                 }
 
             return None

@@ -5,10 +5,97 @@ import traceback
 URL = "https://www.jal.co.jp/flight-status/dom/"
 
 
-def main() -> None:
-    print("=== テスト開始 ===")
-    print(f"URL: {URL}")
+def run_one(page, flight_no: str) -> None:
+    print("\n==============================")
+    print(f"テスト便名入力: {flight_no}")
+    print("==============================")
 
+    page.goto(URL, wait_until="commit", timeout=60000)
+    page.wait_for_timeout(5000)
+
+    # 便名検索タブへ切替
+    tab_radio = page.locator('input[name="form-radio-item"][value="flightNum"]')
+    print(f"form-radio-item flightNum count={tab_radio.count()}")
+    if tab_radio.count() > 0:
+        tab_radio.first.check()
+        page.wait_for_timeout(1500)
+        print("便名検索タブに切替完了")
+    else:
+        print("便名検索タブのradioが見つかりません")
+
+    # form[1] を対象
+    forms = page.locator("form")
+    target_form = forms.nth(1)
+
+    # 翌日指定
+    radios = target_form.locator('input[name="dateAttribute"]')
+    print(f"dateAttribute count={radios.count()}")
+    for i in range(radios.count()):
+        r = radios.nth(i)
+        try:
+            print(
+                f"dateAttribute[{i}] value='{r.get_attribute('value')}' checked={r.is_checked()}"
+            )
+        except Exception:
+            pass
+
+    # 明日 = value=2 を選ぶ
+    tomorrow_radio = target_form.locator('input[name="dateAttribute"][value="2"]')
+    if tomorrow_radio.count() > 0:
+        tomorrow_radio.first.check()
+        page.wait_for_timeout(1000)
+        print("dateAttribute=2 を選択")
+    else:
+        print("dateAttribute=2 が見つかりません")
+
+    # airlineCode = JAL
+    airline = target_form.locator('select[name="airlineCode"]')
+    print(f"airlineCode count={airline.count()}")
+    if airline.count() > 0:
+        try:
+            airline.first.select_option(value="JAL")
+            print("airlineCode=JAL を選択")
+        except Exception as e:
+            print(f"airlineCode選択失敗: {e}")
+
+    # 便名入力
+    flight_input = target_form.locator('input[name="flightSerNo"]')
+    print(f"flightSerNo count={flight_input.count()}")
+    if flight_input.count() == 0:
+        raise RuntimeError("flightSerNo が見つかりません")
+
+    flight_input.first.fill("")
+    flight_input.first.fill(flight_no)
+    page.wait_for_timeout(500)
+    print(f"flightSerNo={flight_no} 入力完了")
+
+    # ボタン押下
+    search_button = target_form.get_by_text("検索する", exact=False)
+    print(f"検索するボタン count={search_button.count()}")
+    if search_button.count() == 0:
+        raise RuntimeError("検索するボタンが見つかりません")
+
+    search_button.first.click()
+    page.wait_for_timeout(6000)
+
+    text = page.locator("body").inner_text(timeout=15000)
+
+    print("=== 検索後チェック ===")
+    print(f"現在URL: {page.url}")
+    print(f"3082を含む: {'3082' in text}")
+    print(f"JAL3082を含む: {'JAL3082' in text}")
+    print(f"082を含む: {'082' in text}")
+    print(f"73Hを含む: {'73H' in text}")
+    print(f"737-800を含む: {'737-800' in text}")
+    print(f"国際線機材を含む: {'国際線機材' in text}")
+    print(f"国際線仕様を含む: {'国際線仕様' in text}")
+
+    print("=== 検索後冒頭 ===")
+    print(text[:5000])
+    print("=== end ===")
+
+
+def main() -> None:
     with sync_playwright() as p:
         browser = p.firefox.launch(headless=True)
         context = browser.new_context(
@@ -23,83 +110,14 @@ def main() -> None:
         page.set_default_timeout(30000)
 
         try:
-            page.goto(URL, wait_until="commit", timeout=60000)
-            page.wait_for_timeout(5000)
+            print("=== テスト開始 ===")
+            print(f"URL: {URL}")
 
-            text = page.locator("body").inner_text(timeout=15000)
-            print("=== ページ冒頭 ===")
-            print(text[:3000])
-            print("=== end ===")
+            # まず 3082 で試す
+            run_one(page, "3082")
 
-            print("\n=== form一覧 ===")
-            forms = page.locator("form")
-            form_count = forms.count()
-            print(f"form count={form_count}")
-
-            for i in range(form_count):
-                form = forms.nth(i)
-                try:
-                    action = form.get_attribute("action") or ""
-                    method = form.get_attribute("method") or ""
-                    print(f"\n--- form[{i}] action='{action}' method='{method}' ---")
-
-                    inputs = form.locator("input, select, textarea, button")
-                    item_count = inputs.count()
-                    print(f"item count={item_count}")
-
-                    for j in range(min(item_count, 80)):
-                        item = inputs.nth(j)
-                        tag = item.evaluate("el => el.tagName")
-                        item_type = item.get_attribute("type") or ""
-                        name = item.get_attribute("name") or ""
-                        value = item.get_attribute("value") or ""
-                        placeholder = item.get_attribute("placeholder") or ""
-                        aria = item.get_attribute("aria-label") or ""
-                        try:
-                            visible_text = (item.inner_text() or "").strip()
-                        except Exception:
-                            visible_text = ""
-
-                        print(
-                            f"item[{j}] "
-                            f"tag='{tag}' type='{item_type}' "
-                            f"name='{name}' value='{value}' "
-                            f"placeholder='{placeholder}' aria='{aria}' "
-                            f"text='{visible_text}'"
-                        )
-                except Exception as e:
-                    print(f"form[{i}] 読み取り失敗: {e}")
-
-            print("\n=== input全体から候補だけ抽出 ===")
-            all_items = page.locator("input, select, button")
-            all_count = all_items.count()
-            print(f"all item count={all_count}")
-
-            keywords = [
-                "flight", "便", "date", "日付", "status", "search",
-                "FLT", "DATE", "CARR", "APORT", "DPORT", "FsBtn"
-            ]
-
-            for i in range(all_count):
-                try:
-                    item = all_items.nth(i)
-                    tag = item.evaluate("el => el.tagName")
-                    item_type = item.get_attribute("type") or ""
-                    name = item.get_attribute("name") or ""
-                    value = item.get_attribute("value") or ""
-                    placeholder = item.get_attribute("placeholder") or ""
-                    aria = item.get_attribute("aria-label") or ""
-                    text2 = f"{tag} {item_type} {name} {value} {placeholder} {aria}".lower()
-
-                    if any(k.lower() in text2 for k in keywords):
-                        print(
-                            f"candidate[{i}] "
-                            f"tag='{tag}' type='{item_type}' "
-                            f"name='{name}' value='{value}' "
-                            f"placeholder='{placeholder}' aria='{aria}'"
-                        )
-                except Exception:
-                    pass
+            # ダメなら 082 でも試す
+            run_one(page, "082")
 
         except Exception as e:
             print("=== 例外 ===")

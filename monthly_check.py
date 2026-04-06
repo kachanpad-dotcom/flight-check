@@ -45,8 +45,6 @@ ALL_FLIGHTS = [
     "JAL189",
     "JAL193",
     "JAL201",
-    "JAL201",
-    "JAL209",
     "JAL209",
     "JAL213",
     "JAL215",
@@ -197,8 +195,10 @@ ALL_FLIGHTS = [
     "JAL3009",
     "JAL3083",
     "JAL3087",
-    # ここに190便入れる
 ]
+
+# 重複便を除去しつつ順番維持
+ALL_FLIGHTS = list(dict.fromkeys(ALL_FLIGHTS))
 
 # =========================
 # 国際線仕様機材の機体番号
@@ -282,8 +282,32 @@ INTERNATIONAL_REGS = {
     "JA880J",
     "JA881J",
     "JA882J",
-    # ここに78機入れる
 }
+
+
+def safe_get(d: dict, *keys, default=None):
+    cur = d
+    for k in keys:
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(k)
+        if cur is None:
+            return default
+    return cur
+
+
+def parse_flight_dict(data: dict) -> Optional[dict]:
+    reg = data.get("registration")
+    dep = safe_get(data, "airport", "origin", "code", "iata")
+    arr = safe_get(data, "airport", "destination", "code", "iata")
+    model = safe_get(data, "aircraft", "model", "text", default="") or ""
+
+    return {
+        "reg": reg,
+        "dep": dep,
+        "arr": arr,
+        "model": model,
+    }
 
 
 def get_flight_info(flight_no: str) -> Optional[dict]:
@@ -304,43 +328,32 @@ def get_flight_info(flight_no: str) -> Optional[dict]:
             return None
 
         text = res.text.strip()
+
         if not text:
             print(f"{flight_no} empty response")
             return None
 
         print(f"{flight_no} response head: {text[:200]!r}")
 
-        # JSONの先頭っぽくないものは捨てる
+        # Array(...) などの壊れた非JSON対策
+        if text.startswith("Array"):
+            print(f"{flight_no} invalid JSON (Array)")
+            return None
+
+        # JSONっぽくないものは捨てる
         if not (text.startswith("{") or text.startswith("[")):
             print(f"{flight_no} non-json response")
             return None
 
         try:
-            data = res.json()
+            data = json.loads(text)
         except Exception as e:
             print(f"{flight_no} json parse failed: {e}")
             return None
 
-        # dict形式
         if isinstance(data, dict):
-            return {
-                "reg": data.get("registration"),
-                "dep": (
-                    data.get("airport", {})
-                    .get("origin", {})
-                    .get("code", {})
-                    .get("iata")
-                ),
-                "arr": (
-                    data.get("airport", {})
-                    .get("destination", {})
-                    .get("code", {})
-                    .get("iata")
-                ),
-                "model": data.get("aircraft", {}).get("model", {}).get("text", ""),
-            }
+            return parse_flight_dict(data)
 
-        # list形式
         if isinstance(data, list):
             print(f"{flight_no} returned list length={len(data)}")
             if not data:
@@ -350,22 +363,7 @@ def get_flight_info(flight_no: str) -> Optional[dict]:
             print(f"{flight_no} first item={first!r}")
 
             if isinstance(first, dict):
-                return {
-                    "reg": first.get("registration"),
-                    "dep": (
-                        first.get("airport", {})
-                        .get("origin", {})
-                        .get("code", {})
-                        .get("iata")
-                    ),
-                    "arr": (
-                        first.get("airport", {})
-                        .get("destination", {})
-                        .get("code", {})
-                        .get("iata")
-                    ),
-                    "model": first.get("aircraft", {}).get("model", {}).get("text", ""),
-                }
+                return parse_flight_dict(first)
 
             return None
 
@@ -449,6 +447,7 @@ def main():
             if not errors.get(flight):
                 messages.append(f"⚠️取得失敗\n{flight}")
             errors[flight] = True
+            time.sleep(random.uniform(4, 6))
             continue
 
         errors[flight] = False

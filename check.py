@@ -23,10 +23,8 @@ def goto_with_retry(page, url: str, retries: int = 3) -> None:
     raise last_error
 
 
-def dump_text_flags(page, title: str) -> None:
-    text = page.locator("body").inner_text(timeout=15000)
+def print_flags(text: str, title: str) -> None:
     print(f"\n=== {title} ===")
-    print("現在URL:", page.url)
     print("3082を含む:", "3082" in text)
     print("082を含む:", "082" in text)
     print("73Hを含む:", "73H" in text)
@@ -55,136 +53,92 @@ def main():
         page = context.new_page()
         page.set_default_timeout(30000)
 
-        reqs = []
-        ress = []
-        console_logs = []
-
-        def on_request(req):
-            if "jal.co.jp" in req.url:
-                reqs.append((req.method, req.url))
-                print(f"[request] {req.method} {req.url}")
-
-        def on_response(res):
-            if "jal.co.jp" in res.url:
-                body_preview = None
-                try:
-                    if any(x in res.url for x in ["fltInfoWeb", "detail", "seat", "map", "aircraft", "flight-status"]):
-                        body_preview = res.text()[:1500]
-                except Exception:
-                    body_preview = None
-                ress.append((res.status, res.url, body_preview))
-                print(f"[response] {res.status} {res.url}")
-
-        def on_console(msg):
-            console_logs.append(f"{msg.type}: {msg.text}")
-            print(f"[console] {msg.type}: {msg.text}")
-
-        page.on("request", on_request)
-        page.on("response", on_response)
-        page.on("console", on_console)
-
         try:
             print("=== テスト開始 ===")
             print("URL =", URL)
 
             goto_with_retry(page, URL)
-            dump_text_flags(page, "初期表示")
 
-            buttons = page.locator("button.js-toggle-show_btn")
-            count = buttons.count()
-            print("\n=== 詳細ボタン一覧 ===")
-            print("js-toggle-show_btn count =", count)
-            if count == 0:
-                raise RuntimeError("js-toggle-show_btn が見つかりません")
+            body_text = page.locator("body").inner_text(timeout=15000)
+            print_flags(body_text, "初期本文")
 
-            target = None
-            for i in range(count):
-                btn = buttons.nth(i)
-                text = (btn.inner_text() or "").strip()
-                print(f"[{i}] text='{text}'")
-                if "3082" in text:
-                    target = btn
-                    print(f"JAL3082候補ボタン発見: index={i}")
-                    break
+            btn = page.locator('button.js-toggle-show_btn[aria-controls="toggle-0"]').first
+            print("\n=== 詳細ボタン情報 ===")
+            print("count =", page.locator('button.js-toggle-show_btn[aria-controls="toggle-0"]').count())
 
-            if target is None:
-                target = buttons.first
-                print("3082を含むボタンが見つからないので先頭を使用")
+            if btn.count() == 0:
+                raise RuntimeError('aria-controls="toggle-0" の詳細ボタンが見つかりません')
 
-            print("\n=== ボタン周辺HTML(クリック前) ===")
+            print("button outerHTML =")
+            print(btn.evaluate("(el) => el.outerHTML"))
+            print("aria-expanded(before) =", btn.get_attribute("aria-expanded"))
+
+            # まずクリック
             try:
-                print(target.evaluate("(el) => el.outerHTML"))
-            except Exception as e:
-                print("button outerHTML取得失敗:", e)
-
-            try:
-                print("\n--- 親要素 outerHTML ---")
-                print(target.evaluate("(el) => el.parentElement ? el.parentElement.outerHTML : ''"))
-            except Exception as e:
-                print("parent outerHTML取得失敗:", e)
-
-            try:
-                print("\n--- 祖父要素 outerHTML ---")
-                print(target.evaluate("""
-                (el) => {
-                    const p = el.parentElement;
-                    const gp = p ? p.parentElement : null;
-                    return gp ? gp.outerHTML : '';
-                }
-                """))
-            except Exception as e:
-                print("grandparent outerHTML取得失敗:", e)
-
-            try:
-                target.scroll_into_view_if_needed(timeout=5000)
+                btn.scroll_into_view_if_needed(timeout=5000)
             except Exception:
                 pass
 
-            target.click(force=True, timeout=5000)
-            print("\n詳細ボタンクリック成功")
-            page.wait_for_timeout(6000)
-
-            dump_text_flags(page, "クリック後")
-
-            print("\n=== request log tail ===")
-            for method, url in reqs[-20:]:
-                print(method, url)
-
-            print("\n=== response log tail ===")
-            for status, url, preview in ress[-20:]:
-                print(status, url)
-                if preview:
-                    print("--- preview ---")
-                    print(preview)
-                    print("--- end preview ---")
-
-            print("\n=== console log tail ===")
-            for msg in console_logs[-20:]:
-                print(msg)
-
-            print("\n=== クリック後のbutton周辺HTML ===")
-            try:
-                print(target.evaluate("(el) => el.outerHTML"))
-            except Exception as e:
-                print("button outerHTML取得失敗:", e)
+            clicked = False
 
             try:
-                print("\n--- 親要素 outerHTML ---")
-                print(target.evaluate("(el) => el.parentElement ? el.parentElement.outerHTML : ''"))
+                btn.click(force=True, timeout=5000)
+                page.wait_for_timeout(3000)
+                print("button click(force=True) 成功")
+                clicked = True
             except Exception as e:
-                print("parent outerHTML取得失敗:", e)
+                print("button click失敗:", e)
 
-            try:
-                print("\n--- 祖父要素 outerHTML ---")
-                print(target.evaluate("""
-                (el) => {
-                    const p = el.parentElement;
-                    const gp = p ? p.parentElement : null;
-                    return gp ? gp.outerHTML : '';
-                }
-                """))
-            except Exception as e:
-                print("grandparent outerHTML取得失敗:", e)
+            if not clicked:
+                try:
+                    btn.evaluate("(el) => el.click()")
+                    page.wait_for_timeout(3000)
+                    print("button JS click成功")
+                    clicked = True
+                except Exception as e:
+                    print("button JS click失敗:", e)
+
+            print("aria-expanded(after) =", btn.get_attribute("aria-expanded"))
+
+            # 展開先そのものを直接読む
+            target = page.locator("#toggle-0")
+            print("\n=== toggle-0 情報 ===")
+            print("count =", target.count())
+
+            if target.count() > 0:
+                try:
+                    outer_html = target.first.evaluate("(el) => el.outerHTML")
+                    print("--- toggle-0 outerHTML 冒頭 ---")
+                    print(outer_html[:8000])
+                    print("--- end ---")
+                except Exception as e:
+                    print("toggle-0 outerHTML取得失敗:", e)
+
+                try:
+                    inner_text = target.first.inner_text(timeout=5000)
+                except Exception:
+                    inner_text = ""
+
+                print_flags(inner_text, "toggle-0 inner_text")
+
+                if inner_text.strip():
+                    print("\n=== toggle-0 text 冒頭 ===")
+                    print(inner_text[:4000])
+                    print("=== end ===")
+            else:
+                print("toggle-0 が存在しません")
+
+            # 保険でHTML全体から toggle-0 周辺を抜く
+            html = page.content()
+            idx = html.find('id="toggle-0"')
+            print("\n=== page.content() から toggle-0 周辺 ===")
+            if idx >= 0:
+                start = max(0, idx - 500)
+                end = min(len(html), idx + 8000)
+                snippet = html[start:end]
+                print(snippet)
+            else:
+                print('id="toggle-0" が HTML 内に見つかりません')
 
         except Exception as e:
             print("=== 例外 ===")

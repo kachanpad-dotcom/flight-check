@@ -289,11 +289,28 @@ INTERNATIONAL_REGS = {
 def get_flight_info(flight_no: str) -> Optional[dict]:
     try:
         url = f"https://data-live.flightradar24.com/clickhandler/?flight={flight_no}"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://www.flightradar24.com/",
+        }
 
         res = requests.get(url, headers=headers, timeout=20)
+
+        print(f"{flight_no} status={res.status_code}")
+        print(f"{flight_no} content-type={res.headers.get('content-type')}")
+
         if res.status_code != 200:
-            print(f"{flight_no} status={res.status_code}")
+            return None
+
+        text = res.text.strip()
+        if not text:
+            print(f"{flight_no} empty response")
+            return None
+
+        # JSON以外が返った時の確認用
+        if not text.startswith("{"):
+            print(f"{flight_no} non-json response head: {text[:200]}")
             return None
 
         data = res.json()

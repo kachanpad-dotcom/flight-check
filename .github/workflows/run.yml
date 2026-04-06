@@ -1,27 +1,39 @@
-name: Run Python
+name: flight-check
 
 on:
-  push:
+  schedule:
+    - cron: '0 21,0,3,6,9,12 * * *'  # JST 6,9,12,15,18,21
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  run:
+  check:
     runs-on: ubuntu-latest
 
     steps:
-      - name: コード取得
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Pythonセットアップ
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: 依存関係インストール
-        run: pip install -r requirements.txt
+      - name: Install requests
+        run: pip install requests
 
-      - name: 実行
-        run: python main.py
+      - name: Run script
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python check.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git commit -m "Update flight state" || echo "No changes to commit"
+          git push

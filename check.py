@@ -9,8 +9,8 @@ DATA_FILE = Path("data.json")
 
 # ここに監視したい便名を入れる
 FLIGHTS_TO_CHECK = [
-    "JAL208",
-    "JAL123",
+    "JAL3082",
+    "JAL3084",
 ]
 
 LINE_CHANNEL_TOKEN = os.getenv("LINE_CHANNEL_TOKEN")
@@ -68,7 +68,7 @@ def get_flight_equipment(flight_no: str) -> Optional[str]:
 
     # 仮実装
     sample_map = {
-        "JAL208": "B737-800",
+        "JAL3082": "B737-800",
         "JAL123": "A350-900",
     }
     return sample_map.get(flight_no)

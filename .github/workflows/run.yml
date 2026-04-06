@@ -22,3 +22,6 @@ jobs:
 
       - name: 実行
         run: python main.py
+        env:
+        LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}

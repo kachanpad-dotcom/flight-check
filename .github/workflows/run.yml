@@ -16,6 +16,6 @@ jobs:
 
       - run: |
           pip install playwright
-          python -m playwright install --with-deps chromium
+          python -m playwright install --with-deps firefox
 
       - run: python check.py

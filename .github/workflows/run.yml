@@ -6,6 +6,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +20,10 @@ jobs:
       - run: python -m playwright install --with-deps chromium
 
       - run: python jal_check.py
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jal-artifacts
+          path: artifacts/

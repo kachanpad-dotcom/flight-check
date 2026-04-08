@@ -1,55 +1,47 @@
-import os
-from pathlib import Path
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
+import random
+import time
 
-URL = os.getenv("JAL_TEST_URL", "https://booking.jal.co.jp/jl/dom-bkg/upsell/outbound")
-OUT_DIR = Path("artifacts")
-OUT_DIR.mkdir(exist_ok=True)
-
-KEYWORDS = [
-    "国際線仕様機材",
-    "787",
-    "777",
-    "座席モニター",
-    "USB",
-    "AC電源",
-]
+URL = "https://booking.jal.co.jp/jl/dom-bkg/upsell/outbound"
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(locale="ja-JP")
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled"
+            ]
+        )
+
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+            locale="ja-JP",
+            viewport={"width": 1280, "height": 800}
+        )
+
         page = context.new_page()
 
-        print(f"OPEN: {URL}")
-        page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+        # ちょっと待つ（人間っぽく）
+        time.sleep(random.uniform(1, 3))
 
-        # 画面が落ち着くまで少し待つ
-        try:
-            page.wait_for_load_state("networkidle", timeout=15000)
-        except PlaywrightTimeoutError:
-            print("networkidle timeout -> continue")
+        print("OPEN:", URL)
 
-        page.screenshot(path=str(OUT_DIR / "jal_page.png"), full_page=True)
-        html = page.content()
-        (OUT_DIR / "jal_page.html").write_text(html, encoding="utf-8")
+        page.goto(URL, timeout=120000)
 
-        text = page.locator("body").inner_text(timeout=10000)
-        (OUT_DIR / "jal_page.txt").write_text(text, encoding="utf-8")
+        # 追加で待つ
+        time.sleep(random.uniform(3, 6))
 
-        found = []
-        for kw in KEYWORDS:
-            if kw in text:
-                found.append(kw)
+        text = page.locator("body").inner_text()
 
-        print("===== KEYWORD CHECK =====")
-        if found:
-            print("FOUND:", ", ".join(found))
+        print("===== RESULT =====")
+
+        if "国際線仕様機材" in text:
+            print("FOUND: 国際線仕様機材")
         else:
-            print("FOUND: none")
+            print("NOT FOUND")
 
-        print("===== PAGE TEXT HEAD =====")
-        print(text[:3000])
+        print(text[:1000])
 
         browser.close()
 

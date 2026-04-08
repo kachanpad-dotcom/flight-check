@@ -1,4 +1,4 @@
-name: test-jal-playwright
+name: jal-check
 
 on:
   workflow_dispatch:
@@ -6,7 +6,6 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -15,23 +14,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install packages
-        run: |
-          pip install playwright
+      - run: pip install playwright
 
-      - name: Install Chromium
-        run: |
-          python -m playwright install --with-deps chromium
+      - run: python -m playwright install --with-deps chromium
 
-      - name: Run script
-        env:
-          JAL_TEST_URL: https://booking.jal.co.jp/jl/dom-bkg/upsell/outbound
-        run: |
-          python test_jal_playwright.py
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jal-playwright-artifacts
-          path: artifacts/
+      - run: python jal_check.py

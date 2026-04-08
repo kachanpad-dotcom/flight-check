@@ -1,59 +1,72 @@
-from playwright.sync_api import sync_playwright
+from pathlib import Path
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import time
 import random
 
 URL = "https://www.jal.co.jp/jp/ja/"
+OUT_DIR = Path("artifacts")
+OUT_DIR.mkdir(exist_ok=True)
 
-def search_flight(page, dep, arr):
-    page.goto(URL, timeout=60000)
-    time.sleep(random.uniform(2, 4))
 
-    # 出発地クリック
-    page.click("text=名古屋（中部）", timeout=10000)
-    time.sleep(1)
+def safe_text(page):
+    try:
+        return page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        return ""
 
-    page.click("text=東海・北陸")
-    time.sleep(1)
 
-    page.click("text=名古屋（中部）")
-    time.sleep(1)
+def search_flight(page):
+    print("OPEN:", URL)
 
-    # 到着地クリック
-    page.click("text=東京（成田）")
-    time.sleep(1)
+    try:
+        response = page.goto(URL, wait_until="domcontentloaded", timeout=90000)
+        print("goto response:", response.status if response else "no response")
+    except Exception as e:
+        print("goto failed:", repr(e))
+        page.screenshot(path=str(OUT_DIR / "goto_failed.png"), full_page=True)
+        text = safe_text(page)
+        (OUT_DIR / "goto_failed.txt").write_text(text, encoding="utf-8")
+        raise
 
-    page.click("text=東京（成田）")
-    time.sleep(1)
+    time.sleep(random.uniform(3, 5))
+    page.screenshot(path=str(OUT_DIR / "top.png"), full_page=True)
 
-    # 検索ボタン
-    page.keyboard.press("Enter")
-    time.sleep(random.uniform(5, 8))
+    text = safe_text(page)
+    (OUT_DIR / "top.txt").write_text(text, encoding="utf-8")
+    print("PAGE HEAD:")
+    print(text[:1000])
 
-    text = page.locator("body").inner_text()
+    if "システムエラー" in text or "やり直してください" in text:
+        print("JAL returned error page")
+        return False
 
-    if "国際線仕様機材" in text:
-        return True
-    return False
+    # ここではまだ遷移確認だけ
+    return True
 
 
 def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
 
         context = browser.new_context(
-            user_agent="Mozilla/5.0",
-            locale="ja-JP"
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            locale="ja-JP",
+            viewport={"width": 1365, "height": 900},
         )
 
         page = context.new_page()
-
-        result = search_flight(page, "NGO", "NRT")
-
+        result = search_flight(page)
         print("RESULT:", result)
-
         browser.close()
 
 

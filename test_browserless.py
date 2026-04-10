@@ -3,7 +3,7 @@ import os
 import time
 
 # ★ここに自分のトークン入れる
-BROWSERLESS_WS = "wss://chrome.browserless.io?token=ここに貼る"
+BROWSERLESS_WS = "wss://chrome.browserless.io?token=2UJL7aAw4RvYwBc145a11a5a853b246028d93c51a4538b32f"
 
 def main():
     with sync_playwright() as p:
